@@ -51,16 +51,11 @@ Hint Constructors eval : core.
 Theorem eval_refl :
   forall l, eval l l.
 Proof.
-  intros l. remember (length l) as n eqn:E.
-  revert l E. induction n as [| n' IH]; intros l E.
-  - destruct l; auto. simpl in E. lia.
-  - assert (l <> []). { destruct l; discriminate.  }
-    apply exists_last in H.
-    destruct H as [l' [a H]]. subst.
-    rewrite last_length in E. inversion E. specialize (IH l' H0).
-    destruct a.
+  induction l using rev_ind.
+  - constructor.
+  - destruct x.
     + apply eval_P; auto.
-    + apply eval_N with []; auto.
+    + apply eval_N with (l:=l) (l':=l) (r':=[]); auto.
 Qed.
 
 Hint Resolve eval_refl : core.
@@ -72,7 +67,7 @@ Theorem eval_len :
 Proof.
   intros l l' H.
   induction H; auto; repeat rewrite length_app; simpl; auto.
-  subst. rewrite length_map. auto.
+  subst. rewrite length_map; simpl. auto.
 Qed.
 
 Theorem eval_hd_eq :
@@ -551,11 +546,9 @@ Proof.
   2: {
     erewrite map_app.
     f_equal.
-    replace N with (neg P) by reflexivity.
+    change N with (neg P).
     rewrite map_repeat; reflexivity.
-    replace (P :: repeat P (length l2)) with (repeat P (S (length l2)))
-      by reflexivity.
-    replace P with (neg N) by reflexivity.
+    change P with (neg N).
     rewrite map_cons, map_repeat; reflexivity.
   }
   destruct n.
@@ -755,6 +748,118 @@ Proof.
   - simpl in H. subst. simpl. lia.
 Qed.
 
+Lemma greedy_eval_progress_case_P :
+  forall l l' hd' tl tl',
+    eval l l' ->
+    l = hd' ++ N :: P :: tl ->
+    l' = hd' ++ N :: N :: tl' ->
+    length tl = length tl' ->
+    greedy_eval l l' \/ exists L,
+      (weaker l' L) /\
+      count_occ eqb L N < count_occ eqb l' N /\
+      eval l L.
+Proof with auto.
+  intros l l' hd' tl tl' H H0 H1 H2.
+  destruct (repeat_or_split tl P) as [HallP|[n Heq]].
+  - right. exists l. subst. rewrite HallP, H2. repeat split...
+    rewrite !count_occ_app.
+    apply add_lt_mono_l_proj_l2r. simpl.
+    rewrite count_occ_repeat_neq; try discriminate. lia.
+  - assert (n < length tl').
+    { rewrite <- H2. apply (f_equal (@length sign)) in Heq.
+      rewrite length_app, repeat_length in Heq.
+      simpl in Heq. lia. }
+    specialize firstn_skipn with (l:=tl') (n:=n) as Hsplit.
+    destruct (repeat_or_split (firstn n tl') N) as [HallN|[m Hpref]].
+    { rewrite firstn_length_le in HallN; try lia.
+      assert (Hlen:
+        length (skipn n tl') = S (length (skipn (S n) tl)))
+      by (rewrite !length_skipn; lia).
+      destruct (repeat_or_split (skipn n tl') P) as [HallTailP|[k Htail]].
+      - left. subst. rewrite Heq, <- Hsplit, HallN, HallTailP, Hlen.
+        apply greedy_eval_flip with (n:=S n).
+      - right.
+        subst. rewrite Heq, <- Hsplit, HallN.
+        exists (hd' ++ N :: repeat N (S n) ++ repeat P (length (skipn n tl'))).
+        repeat split.
+        + simpl...
+        + rewrite !count_occ_app. simpl.
+          apply add_lt_mono_l_proj_l2r. simpl.
+          repeat apply add_lt_mono_l_proj_l2r with (p:=1).
+          rewrite !count_occ_app.
+          apply add_lt_mono_l_proj_l2r.
+          rewrite count_occ_repeat_neq; try discriminate.
+            rewrite Htail. rewrite count_occ_app. simpl. lia.
+        + rewrite Hlen.
+          apply greedy_eval_sound, greedy_eval_flip with (n:=S n).
+    }
+    assert (Hmn: m < n).
+    { apply (f_equal (@length sign)) in Hpref.
+      rewrite firstn_length_le in Hpref; try lia.
+      rewrite length_app in Hpref. simpl in Hpref.
+      rewrite repeat_length in Hpref. simpl in Hpref. lia.
+    }
+    subst. rewrite Heq, <- Hsplit, Hpref in H |-*.
+    right. eexists. repeat split.
+    3: {
+      apply pp_forward with (1:=H) (n:=length hd' + (S m)).
+      - rewrite app_nth2_plus with (l:=hd').
+        simpl. destruct m...
+        rewrite app_nth1.
+        1: apply nth_repeat_lt.
+        2: rewrite repeat_length.
+        all: lia.
+      - replace (S (length hd' + S m)) with (length hd' + S (S m)) by lia.
+        rewrite app_nth2_plus with (l:=hd').
+        simpl.
+        rewrite app_nth1.
+        1: apply nth_repeat_lt.
+        2: rewrite repeat_length.
+        all: lia.
+      - replace (S (length hd' + S m)) with (length hd' + S (S m)) by lia.
+        rewrite app_nth2_plus with (l:=hd').
+        rewrite <- app_assoc. simpl.
+        Hint Resolve repeat_length : core.
+        replace m with (length (repeat N m)) at 1...
+        rewrite nth_middle...
+    }
+    { apply weaker_substitute. }
+    apply count_occ_lt_substitute.
+    rewrite app_nth2_plus. simpl. destruct m...
+    rewrite <- app_assoc.
+    rewrite app_nth1. apply nth_repeat_lt. lia.
+    rewrite repeat_length. lia.
+Qed.
+
+Lemma greedy_eval_progress_case_N :
+  forall l l' hd' tl tl',
+    eval l l' ->
+    l = hd' ++ N :: N :: tl ->
+    l' = hd' ++ N :: P :: tl' ->
+    length tl = length tl' ->
+    greedy_eval l l' \/ exists L,
+      (weaker l' L) /\
+      count_occ eqb L N < count_occ eqb l' N /\
+      eval l L.
+Proof with auto.
+  intros l l' hd' tl tl' H H0 H1 H2.
+  destruct (repeat_or_split tl' P) as [HallP|[n Heq]].
+  - left.
+    rewrite H0, H1.
+    assert (Htail: tl' = repeat P (length tl)).
+    { rewrite HallP, <- H2. reflexivity. }
+    rewrite Htail.
+    apply greedy_eval_flip with (n:=0).
+  - right. exists (hd' ++ N :: P :: repeat P (length tl)).
+    subst l l'. rewrite H2 at 1 2. repeat split...
+    { rewrite !count_occ_app.
+      apply add_lt_mono_l_proj_l2r. simpl.
+      rewrite count_occ_repeat_neq; try discriminate.
+      rewrite Heq. rewrite count_occ_app. simpl. lia. }
+    { apply greedy_eval_sound.
+      apply greedy_eval_flip with (n:=0). }
+Qed.
+
 Theorem greedy_eval_progress :
   forall l l',
     eval l l' ->
@@ -773,99 +878,8 @@ Proof with auto.
     rewrite H3, <- app_assoc in H0, H1. simpl in H0, H1.
     clear -H0 H1 H2 H.
     destruct a.
-    + destruct (repeat_or_split tl P) as [|[n Heq]].
-      * right. exists l. subst. rewrite H3, H2. repeat split...
-        rewrite !count_occ_app.
-        apply add_lt_mono_l_proj_l2r. simpl.
-        rewrite count_occ_repeat_neq; try discriminate. lia.
-      * assert (n < length tl').
-        { rewrite <- H2. apply (f_equal (@length sign)) in Heq.
-          rewrite length_app, repeat_length in Heq.
-          simpl in Heq. lia. }
-        specialize firstn_skipn with (l:=tl') (n:=n) as ?.
-        destruct (repeat_or_split (firstn n tl') N)
-          as [|[m]].
-        { rewrite firstn_length_le in H5; try lia.
-          assert (Hlen:
-            length (skipn n tl') = S (length (skipn (S n) tl)))
-          by (rewrite !length_skipn; lia).
-          (* hd' N P P* N tl *)
-          (* hd' N P N* ? *)
-          destruct (repeat_or_split (skipn n tl') P) as [|[k]].
-          - left. subst. rewrite Heq,<-H4,H5,H6,Hlen.
-            apply greedy_eval_flip with (n:=S n).
-          - right.
-            subst. rewrite Heq,<-H4,H5.
-            exists (hd' ++ N :: repeat N (S n) ++ repeat P (length (skipn n tl'))).
-            repeat split.
-            + simpl...
-            + rewrite !count_occ_app. simpl.
-              apply add_lt_mono_l_proj_l2r. simpl.
-              repeat apply add_lt_mono_l_proj_l2r with (p:=1).
-              rewrite !count_occ_app.
-              apply add_lt_mono_l_proj_l2r.
-              rewrite count_occ_repeat_neq; try discriminate.
-              rewrite H6. rewrite count_occ_app. simpl. lia.
-            + rewrite Hlen.
-              apply greedy_eval_sound, greedy_eval_flip with (n:=S n).
-        }
-        (* hd N P  P^n  N *)
-        (* hd N N N^m P *)
-        assert (Hmn: m < n). {
-          apply (f_equal (@length sign)) in H5.
-          rewrite firstn_length_le in H5; try lia.
-          rewrite length_app in H5. simpl in H5.
-          rewrite repeat_length in H5. simpl in H5. lia.
-        }
-        subst. rewrite Heq, <- H4, H5 in H |-*.
-        right. eexists. repeat split.
-        3: {
-          (* Search nth.
-          Check app_nth2_plus.
-          Check app_nth1. *)
-          apply pp_forward with (1:=H) (n:=length hd' + (S m)).
-          - rewrite app_nth2_plus with (l:=hd').
-            simpl. destruct m...
-            rewrite app_nth1.
-            1: apply nth_repeat_lt.
-            2: rewrite repeat_length.
-            all: lia.
-          - replace (S (length hd' + S m)) with (length hd' + S (S m)) by lia.
-            rewrite app_nth2_plus with (l:=hd').
-            simpl.
-            rewrite app_nth1.
-            1: apply nth_repeat_lt.
-            2: rewrite repeat_length.
-            all: lia.
-          - replace (S (length hd' + S m)) with (length hd' + S (S m)) by lia.
-            rewrite app_nth2_plus with (l:=hd').
-            rewrite <- app_assoc. simpl.
-            (* Search nth. *)
-            Hint Resolve repeat_length : core.
-            replace m with (length (repeat N m)) at 1...
-            rewrite nth_middle...
-        }
-        (* weaker *)
-        { apply weaker_substitute. }
-        (* count_occ_lt *)
-        apply count_occ_lt_substitute.
-        rewrite app_nth2_plus. simpl. destruct m...
-        rewrite <- app_assoc.
-        rewrite app_nth1. apply nth_repeat_lt. lia.
-        rewrite repeat_length. lia.
-    + (* a = N *)
-      destruct (repeat_or_split tl' P) as [|[n Heq]].
-      * left. subst.
-        rewrite H3, <- H2.
-        apply greedy_eval_flip with (n:=0).
-      * right. exists (hd' ++ N :: P :: repeat P (length tl)).
-        subst. rewrite H2 at 1 2. repeat split...
-        { rewrite !count_occ_app.
-          apply add_lt_mono_l_proj_l2r. simpl.
-          rewrite count_occ_repeat_neq; try discriminate.
-          rewrite Heq. rewrite count_occ_app. simpl. lia. }
-        { apply greedy_eval_sound.
-          apply greedy_eval_flip with (n:=0). }
+    + eapply greedy_eval_progress_case_P; eauto.
+    + eapply greedy_eval_progress_case_N; eauto.
 Qed.
 
 Theorem greedy_eval_complete_aux :
@@ -876,15 +890,12 @@ Theorem greedy_eval_complete_aux :
       (weaker l' L) /\
       greedy_eval l L.
 Proof with eauto using greedy_eval_sound.
-  induction n; intros.
+  induction n as [|n IH]; intros l l' Heval Hcount.
   - lia.
-  - apply greedy_eval_progress in H.
-    destruct H as [|[L [Hweaker [Hcount Heval]]]].
+  - destruct (greedy_eval_progress _ _ Heval) as [Hgreedy|[L [Hweaker [Hcount' Heval']]]].
     + exists l'. split...
-    + specialize IHn with (1:=Heval).
-      destruct IHn as [L' [Hweaker' Hgreedy]].
-      * lia.
-      * exists L'. split...
+    + destruct (IH _ _ Heval' ltac:(lia)) as [L' [Hweaker' Hgreedy']].
+      exists L'. split...
 Qed.
 
 (* main theorem *)
@@ -898,9 +909,8 @@ Definition greedy_eval_complete_spec :=
 Theorem greedy_eval_complete :
   greedy_eval_complete_spec.
 Proof.
-  unfold greedy_eval_complete_spec.
-  intros.
-  apply greedy_eval_complete_aux with (n:=S (count_occ eqb l' N)); auto.
+  intros l l' Heval.
+  eapply greedy_eval_complete_aux with (n:=S (count_occ eqb l' N)); eauto with arith.
 Qed.
 
 (* generate the definition dependence graph *)
@@ -910,3 +920,17 @@ Print DependGraph sign_eval.greedy_eval_complete_spec.
 
 Print sign_eval.
 *)
+
+Module Negative.
+
+Theorem eval_N_any : forall n l, length l = n -> eval (N :: repeat N n) (N :: l).
+  induction n; intros.
+  - apply length_zero_iff_nil in H. subst. auto.
+  - destruct l. inv H.
+    destruct s.
+    + apply eval_N with (l:=[]) (l':=[]) (r':=N::map neg l); auto.
+      apply IHn. injection H as H. rewrite <- H. apply length_map. simpl. f_equal. apply map_neg_neg.
+    + simpl. apply eval_Ncons. apply IHn. auto.
+Qed.
+
+End Negative.

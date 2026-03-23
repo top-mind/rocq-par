@@ -296,7 +296,7 @@ Proof.
   - destruct (par_fix ((N, x) :: mids ++ (N, y) :: z2) (value prefix)) as [[abs_sum pos_sum] max_sum_suffix] eqn:Hsuffix.
     change (max_sum_suffix <= (let '(_, _, max_sum) := par_fix (prefix ++ (N, x) :: mids ++ (N, y) :: z2) 0 in max_sum)).
     pose proof (par_fix_max_suffix prefix ((N, x) :: mids ++ (N, y) :: z2) 0) as Hbound.
-    replace (0 + value prefix) with (value prefix) in Hbound by lia.
+    Opaque par_fix. simpl in Hbound. Transparent par_fix.
     rewrite Hsuffix in Hbound.
     simpl in Hbound.
     exact Hbound.
@@ -339,19 +339,11 @@ Proof.
     }
     rewrite <- Hprefix.
     rewrite Hlen_z2.
-    replace (map fst xs1 ++ N :: repeat N n ++ P :: repeat P (length z2)) with
-      (map fst xs1 ++ (N :: repeat N n ++ P :: repeat P (length z2))) by reflexivity.
-    replace (xs1 ++ (N, x) :: mids ++ (N, y) :: z2) with
-      (xs1 ++ ((N, x) :: mids ++ (N, y) :: z2)) by reflexivity.
     rewrite value_combine_snd_split with
       (s1:=map fst xs1)
       (s2:=N :: repeat N n ++ P :: repeat P (length z2))
       (xs1:=xs1)
-      (xs2:=(N, x) :: mids ++ (N, y) :: z2).
-    2: {
-      rewrite length_map.
-      reflexivity.
-    }
+      (xs2:=(N, x) :: mids ++ (N, y) :: z2) by apply length_map.
     rewrite value_of_consistent_signs with (xs:=xs1) (s:=map fst xs1) by reflexivity.
     assert (Hlen_mids : n = length mids).
     {
