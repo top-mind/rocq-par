@@ -1,3 +1,4 @@
+(** 本文件包含 贪心算法 par_algo 和算法正确性 correct 的定义，和表述出它们所必要的定义 *)
 From Stdlib Require Import List ZArith.
 From PAR Require Export par_tree_statement.
 Import ListNotations.
